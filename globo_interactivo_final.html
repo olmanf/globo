@@ -1,0 +1,174 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Globo 3D Cesium - Coordenadas con Exportación</title>
+  <script src="https://cesium.com/downloads/cesiumjs/releases/1.127/Build/Cesium/Cesium.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.8.0/proj4.js"></script>
+  <link href="https://cesium.com/downloads/cesiumjs/releases/1.127/Build/Cesium/Widgets/widgets.css" rel="stylesheet" />
+  <style>
+    html, body, #cesiumContainer { width: 100%; height: 100%; margin: 0; padding: 0; font-family: sans-serif; }
+    #infoBox {
+      position: absolute; top: 10px; left: 10px;
+      background: rgba(0,0,0,0.7); color: white; padding: 10px;
+      z-index: 1; font-size: 14px; max-width: 400px;
+    }
+    #controls {
+      position: absolute; bottom: 10px; left: 10px;
+      background: rgba(255,255,255,0.95); padding: 10px; border-radius: 8px;
+      z-index: 2; font-size: 14px;
+    }
+    #controls button, #controls input {
+      margin: 4px 2px;
+    }
+  </style>
+</head>
+<body>
+  <div id="cesiumContainer"></div>
+  <div id="infoBox">Haz clic en el globo para registrar coordenadas.</div>
+  <div id="controls">
+    <button onclick="exportToCSV()">Exportar CSV</button>
+    <button onclick="exportToGeoJSON()">Exportar GeoJSON</button>
+    <button onclick="exportToKML()">Exportar KML</button>
+    <input type="file" id="fileInput" accept=".csv,.geojson,.json" />
+  </div>
+
+  <script>
+    async function iniciar() {
+      Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJjYjU2OTRlMC0zNGFlLTQwZTktYWI0NC1iYzVkODBhNTZjMmQiLCJpZCI6MTkwNDAsImlhdCI6MTc0MjUwMDI0NH0.J7QVFa4ZzcW7uZpcf4wNjA8LErgyUtdnv3szNmGBHso';
+      const terrain = await Cesium.createWorldTerrainAsync();
+
+      const viewer = new Cesium.Viewer('cesiumContainer', {
+        terrainProvider: terrain,
+        selectionIndicator: false,
+        infoBox: false
+      });
+
+      const infoBox = document.getElementById('infoBox');
+      const puntos = [];
+
+      function toUTM(lat, lon) {
+        const zone = Math.floor((lon + 180) / 6) + 1;
+        const northern = lat >= 0;
+        const projStr = `+proj=utm +zone=${zone} +datum=WGS84 ${northern ? '' : '+south'} +units=m +no_defs`;
+        const [easting, northing] = proj4(projStr, [lon, lat]);
+        return { easting: easting.toFixed(2), northing: northing.toFixed(2), zone };
+      }
+
+      function addPoint(lat, lon, height, x, y, z) {
+        const utm = toUTM(lat, lon);
+        puntos.push({ lat, lon, height, x, y, z, utm });
+        viewer.entities.add({
+          position: Cesium.Cartesian3.fromDegrees(lon, lat, height),
+          point: { pixelSize: 8, color: Cesium.Color.RED }
+        });
+      }
+
+      function exportToCSV() {
+        if (puntos.length === 0) return alert("No hay puntos para exportar.");
+        const rows = puntos.map(p =>
+          `${p.lat},${p.lon},${p.height},${p.x},${p.y},${p.z},${p.utm.zone},${p.utm.easting},${p.utm.northing}`);
+        const header = "Lat,Lon,Altura,ECEF_X,ECEF_Y,ECEF_Z,UTM_Zona,Easting,Northing\n";
+        downloadText(header + rows.join("\n"), "coordenadas.csv");
+      }
+
+      function exportToGeoJSON() {
+        if (puntos.length === 0) return alert("No hay puntos para exportar.");
+        const geojson = {
+          type: "FeatureCollection",
+          features: puntos.map(p => ({
+            type: "Feature",
+            geometry: { type: "Point", coordinates: [p.lon, p.lat, p.height] },
+            properties: {
+              ECEF_X: p.x, ECEF_Y: p.y, ECEF_Z: p.z,
+              UTM_Zone: p.utm.zone,
+              UTM_Easting: p.utm.easting,
+              UTM_Northing: p.utm.northing
+            }
+          }))
+        };
+        downloadText(JSON.stringify(geojson, null, 2), "coordenadas.geojson");
+      }
+
+      function exportToKML() {
+        if (puntos.length === 0) return alert("No hay puntos para exportar.");
+        let kml = `<?xml version="1.0" encoding="UTF-8"?>
+        <kml xmlns="http://www.opengis.net/kml/2.2"><Document>`;
+        puntos.forEach((p, i) => {
+          kml += `
+          <Placemark><name>Punto ${i + 1}</name>
+            <description><![CDATA[
+              Lat: ${p.lat}, Lon: ${p.lon}, Altura: ${p.height} m<br>
+              ECEF: (${p.x}, ${p.y}, ${p.z})<br>
+              UTM Zona: ${p.utm.zone}, Easting: ${p.utm.easting}, Northing: ${p.utm.northing}
+            ]]></description>
+            <Point><coordinates>${p.lon},${p.lat},${p.height}</coordinates></Point>
+          </Placemark>`;
+        });
+        kml += `</Document></kml>`;
+        downloadText(kml, "coordenadas.kml");
+      }
+
+      function downloadText(content, filename) {
+        try {
+          const blob = new Blob([content], { type: "text/plain;charset=utf-8;" });
+          const link = document.createElement("a");
+          link.href = URL.createObjectURL(blob);
+          link.download = filename;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        } catch (err) {
+          alert("Error al exportar: " + err);
+        }
+      }
+
+      viewer.screenSpaceEventHandler.setInputAction(movement => {
+        const cartesian = viewer.scene.pickPosition(movement.position);
+        if (!cartesian) return;
+        const cartographic = Cesium.Cartographic.fromCartesian(cartesian);
+        const lon = Cesium.Math.toDegrees(cartographic.longitude).toFixed(6);
+        const lat = Cesium.Math.toDegrees(cartographic.latitude).toFixed(6);
+        const height = cartographic.height.toFixed(2);
+        const x = cartesian.x.toFixed(2), y = cartesian.y.toFixed(2), z = cartesian.z.toFixed(2);
+        infoBox.innerHTML = `
+          <strong>Geográficas:</strong><br>Lat: ${lat}°, Lon: ${lon}°, Altura: ${height} m<br>
+          <strong>ECEF:</strong> X: ${x} m, Y: ${y} m, Z: ${z} m`;
+        addPoint(parseFloat(lat), parseFloat(lon), parseFloat(height), x, y, z);
+      }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
+      document.getElementById('fileInput').addEventListener('change', event => {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = e => {
+          try {
+            const content = e.target.result;
+            if (file.name.endsWith('.csv')) {
+              const rows = content.trim().split("\n").slice(1);
+              rows.forEach(row => {
+                const [lat, lon, height = 0] = row.split(",");
+                const cart = Cesium.Cartesian3.fromDegrees(parseFloat(lon), parseFloat(lat), parseFloat(height));
+                addPoint(parseFloat(lat), parseFloat(lon), parseFloat(height), cart.x.toFixed(2), cart.y.toFixed(2), cart.z.toFixed(2));
+              });
+            } else {
+              const geojson = JSON.parse(content);
+              geojson.features.forEach(f => {
+                const [lon, lat, height = 0] = f.geometry.coordinates;
+                const cart = Cesium.Cartesian3.fromDegrees(lon, lat, height);
+                addPoint(lat, lon, height, cart.x.toFixed(2), cart.y.toFixed(2), cart.z.toFixed(2));
+              });
+            }
+          } catch (err) {
+            alert("Error al cargar archivo: " + err);
+          }
+        };
+        reader.readAsText(file);
+      });
+    }
+
+    iniciar();
+  </script>
+</body>
+</html>
