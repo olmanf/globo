@@ -1,0 +1,167 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Elipsoide WGS84</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+</head>
+<body>
+    <h2>Elipsoide WGS84 y Coordenadas ECEF</h2>
+    <div id="plotly-div" style="width:100%;height:90vh;"></div>
+    <script>
+        const a = 6378137.0;
+        const f = 1 / 298.257223563;
+        const b = a * (1 - f);
+
+        const u = [...Array(100).keys()].map(i => 2 * Math.PI * i / 99);
+        const v = [...Array(100).keys()].map(i => Math.PI * i / 99);
+        const x = [], y = [], z = [];
+        for (let i = 0; i < u.length; i++) {
+            x[i] = []; y[i] = []; z[i] = [];
+            for (let j = 0; j < v.length; j++) {
+                x[i][j] = a * Math.cos(u[i]) * Math.sin(v[j]);
+                y[i][j] = a * Math.sin(u[i]) * Math.sin(v[j]);
+                z[i][j] = b * Math.cos(v[j]);
+            }
+        }
+
+        const surface = {
+            type: 'surface',
+            x: x, y: y, z: z,
+            opacity: 0.8,
+            colorscale: 'Blues',
+            showscale: false
+        };
+
+        const ejeX = {
+            type: 'scatter3d',
+            mode: 'lines',
+            x: [-a, a], y: [0, 0], z: [0, 0],
+            line: { color: 'red', width: 6 },
+            name: 'Eje X'
+        };
+        const ejeY = {
+            type: 'scatter3d',
+            mode: 'lines',
+            x: [0, 0], y: [-a, a], z: [0, 0],
+            line: { color: 'green', width: 6 },
+            name: 'Eje Y'
+        };
+        const ejeZ = {
+            type: 'scatter3d',
+            mode: 'lines',
+            x: [0, 0], y: [0, 0], z: [-b, b],
+            line: { color: 'blue', width: 6 },
+            name: 'Eje Z'
+        };
+
+        const layout = {
+            scene: {
+                xaxis: { title: 'X (m)', range: [-a, a] },
+                yaxis: { title: 'Y (m)', range: [-a, a] },
+                zaxis: { title: 'Z (m)', range: [-b, b] },
+                aspectmode: 'manual',
+                aspectratio: { x: 1, y: 1, z: b/a }
+            },
+            margin: { l: 0, r: 0, t: 40, b: 0 },
+            title: 'Elipsoide WGS84 y Coordenadas ECEF'
+        };
+
+        
+        // Cargar puntos GNSS
+        fetch('puntos.csv')
+            .then(res => res.text())
+            .then(data => {
+                const lines = data.trim().split('\n').slice(1);
+                const xpts = [], ypts = [], zpts = [], labels = [];
+                for (const line of lines) {
+                    const [nombre, lat, lon, alt] = line.split(',');
+                    const latRad = parseFloat(lat) * Math.PI / 180;
+                    const lonRad = parseFloat(lon) * Math.PI / 180;
+                    const h = parseFloat(alt);
+                    const e2 = 1 - (b*b)/(a*a);
+                    const N = a / Math.sqrt(1 - e2 * Math.sin(latRad)**2);
+                    const x = (N + h) * Math.cos(latRad) * Math.cos(lonRad);
+                    const y = (N + h) * Math.cos(latRad) * Math.sin(lonRad);
+                    const z = (N * (1 - e2) + h) * Math.sin(latRad);
+                    xpts.push(x); ypts.push(y); zpts.push(z);
+                    labels.push(nombre);
+                }
+
+ /*               const puntos = {
+                    type: 'scatter3d',
+                    mode: 'markers+text',
+					x: xpts, y: ypts, z: zpts,
+                    marker: { size: 5, color: 'red' },
+					text: labels.map((label, i) => `${label}<br>X: ${xpts[i].toFixed(2)}<br>Y: ${ypts[i].toFixed(2)}<br>Z: ${zpts[i].toFixed(2)}`),
+					textposition: 'top center',
+                    name: 'Puntos GNSS'
+                };*/
+				
+				
+const puntos = {
+    type: 'scatter3d',
+    mode: 'markers+text',
+    x: xpts, y: ypts, z: zpts,
+    marker: { size: 5, color: 'red' },
+	
+    
+    // Etiqueta fija: solo el nombre
+    text: labels,
+    textposition: 'top center',
+	textfont: {
+        size: 10,            // más grande = se ve más separado visualmente
+        color: 'white',		// color del texto
+		family: 'Arial Black'
+    },
+
+    // Etiqueta emergente: coordenadas
+    hovertext: xpts.map(  /*(_, i) => 
+        `X: ${xpts[i].toFixed(2)}<br>Y: ${ypts[i].toFixed(2)}<br>Z: ${zpts[i].toFixed(2)}`*/
+    (label, i) => `Coordenadas ECEF<br>X: ${xpts[i].toFixed(2)}<br>Y: ${ypts[i].toFixed(2)}<br>Z: ${zpts[i].toFixed(2)}`),
+    hoverinfo: 'text',  // muestra solo hovertext
+
+    name: 'Puntos GNSS'
+};
+				
+				
+				
+				
+
+                fetch('costa_rica.geojson')
+                    .then(res => res.json())
+                    .then(geo => {
+                        const lines = [];
+                        geo.features.forEach(f => {
+                            f.geometry.coordinates.forEach(poly => {
+                                (f.geometry.type === "Polygon" ? [poly] : poly).forEach(ring => {
+                                    const xs = [], ys = [], zs = [];
+                                    ring.forEach(([lon, lat]) => {
+                                        const latRad = lat * Math.PI / 180;
+                                        const lonRad = lon * Math.PI / 180;
+                                        const e2 = 1 - (b*b)/(a*a);
+                                        const N = a / Math.sqrt(1 - e2 * Math.sin(latRad)**2);
+                                        const x = N * Math.cos(latRad) * Math.cos(lonRad);
+                                        const y = N * Math.cos(latRad) * Math.sin(lonRad);
+                                        const z = (N * (1 - e2)) * Math.sin(latRad);
+                                        xs.push(x); ys.push(y); zs.push(z);
+                                    });
+                                    lines.push({
+                                        type: 'scatter3d',
+                                        mode: 'lines',
+                                        x: xs, y: ys, z: zs,
+                                        line: { color: 'black', width: 2 },
+                                        name: 'Costa Rica'
+                                    });
+                                });
+                            });
+                        });
+
+                        Plotly.newPlot('plotly-div', [surface, ejeX, ejeY, ejeZ, puntos, ...lines], layout);
+                    });
+            });
+
+    </script>
+</body>
+</html>

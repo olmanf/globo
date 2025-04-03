@@ -1,0 +1,1 @@
+{"type": "FeatureCollection", "features": [{"type": "Feature", "properties": {"name": "Costa Rica"}, "geometry": {"type": "Polygon", "coordinates": [[[-85.9417, 11.2167], [-83.1472, 11.2167], [-83.1472, 8.0417], [-85.9417, 8.0417], [-85.9417, 11.2167]]]}}]}
